@@ -284,3 +284,13 @@ Yoshi/Cost6/Eye8.png
 Yoshi/Cost6/Eye9.png
 Yoshi/Cost6/Nostrils.png
 Yoshi/Cost6/Saddle.png
+Face.class
+Model.class
+ModelViewer.class
+ModelViewer$1.class
+ModelViewer$2.class
+ModelViewer$3.class
+ModelViewer$4.class
+Texture.class
+TextureVertex.class
+Vertex.class

@@ -8,6 +8,7 @@ public class ModelViewer extends JPanel {
     private Model model;
     private double angleX = 0;
     private double angleY = 0;
+    private double angleZ = 0;
     private BufferedImage buffer;
     private double scaleFactor = 1.5;
     private double translateX = 0;
@@ -15,6 +16,7 @@ public class ModelViewer extends JPanel {
     private double translateZ = 0;
 
     private boolean showWireframe = false; // Variable para alternar entre malla y relleno
+    private boolean rotating = false; // Variable para controlar la rotación automática
 
     public ModelViewer(Model model) {
         this.model = model;
@@ -52,12 +54,7 @@ public class ModelViewer extends JPanel {
             @Override
             public void keyPressed(KeyEvent e) {
                 switch (e.getKeyCode()) {
-                    case KeyEvent.VK_B:
-                        scaleFactor *= 1.1;
-                        model.scale(1.1);
-                        repaint();
-                        break;
-                    case KeyEvent.VK_N:
+                       case KeyEvent.VK_N:
                         scaleFactor *= 1.1;
                         model.scale(1.1);
                         repaint();
@@ -83,7 +80,7 @@ public class ModelViewer extends JPanel {
                         translateX += 5;
                         repaint();
                         break;
-                        case KeyEvent.VK_I:
+                    case KeyEvent.VK_I:
                         translateZ += 1;
                         repaint();
                         break;
@@ -116,11 +113,24 @@ public class ModelViewer extends JPanel {
                         showWireframe = !showWireframe;
                         repaint();
                         break;
+                    case KeyEvent.VK_SPACE: // Tecla Espacio para iniciar/detener rotación automática
+                        rotating = !rotating;
+                        break;
                 }
             }
         });
         setFocusable(true);
         requestFocusInWindow();
+
+        Timer timer = new Timer(16, e -> {
+            if (rotating) {
+                angleY += 0.05;
+                angleX+= 0.05;
+                angleZ += 0.05; 
+                repaint();
+            }
+        });
+        timer.start();
     }
 
     private void loadNewModel(String modelPath, String texturePath) {
@@ -140,18 +150,38 @@ public class ModelViewer extends JPanel {
     private void resetTransforms() {
         angleX = 0;
         angleY = 0;
+        angleZ = 0;
         translateX = 0;
         translateY = 0;
         translateZ = 0;
         scaleFactor = 1.5;
     }
 
+    /* Convierte las coordenadas 3D de un vértice a coordenadas 2D en la pantalla, teniendo 
+    en cuenta la rotación, el escalado y la traslación del modelo */
     private Point project(Vertex v) {
+        // Calcular el factor de escala multiplicando 200 por el scaleFactor
         double scale = 200 * scaleFactor;
+    
+        // Llamar al método rotate para aplicar la rotación al vértice (v.x, v.y, v.z)
+        // El método rotate devuelve un array con las coordenadas rotadas del vértice
         double[] rotated = rotate(v.x, v.y, v.z);
+    
+        // Convertir las coordenadas 3D rotadas a coordenadas 2D en la pantalla
+        // La componente x se escala, se centra en el ancho del componente y se aplica la traslación en x
         int x = (int) (rotated[0] * scale + getWidth() / 2 + translateX);
+    
+        // La componente y se escala, se centra en la altura del componente y se aplica la traslación en y
+        // El signo negativo se utiliza para invertir la coordenada y porque en las coordenadas de pantalla,
+        // el origen está en la esquina superior izquierda
         int y = (int) (-rotated[1] * scale + getHeight() / 2 + translateY);
+    
+        // Crear y devolver un objeto Point con las coordenadas (x, y) calculadas,
+        // que representan la posición 2D del vértice proyectado en la pantalla
         return new Point(x, y);
+
+        // Es decir rota el vértice según los ángulos de rotación actuales, luego escala las coordenadas y 
+        // las traslada para centrarlas en el componente de visualización
     }
 
     private double[] rotate(double x, double y, double z) {
@@ -167,17 +197,23 @@ public class ModelViewer extends JPanel {
         double sinY = Math.sin(angleY);
         double cosX = Math.cos(angleX);
         double sinX = Math.sin(angleX);
+        double cosZ = Math.cos(angleZ);
+        double sinZ = Math.sin(angleZ);
 
         double xz = cosY * x - sinY * (z + translateZ);
         double yz = sinY * x + cosY * (z + translateZ);
         double yx = cosX * yz - sinX * y;
         double yy = sinX * yz + cosX * y;
+        
+        double newX = cosZ * xz - sinZ * yx;
+        double newY = sinZ * xz + cosZ * yx;
+        double newZ = yy;
 
-        xz += centerX;
-        yx += centerY;
-        yy += centerZ;
+        newX += centerX;
+        newY += centerY;
+        newZ += centerZ;
 
-        return new double[]{xz, yx, yy};
+        return new double[]{newX, newY, newZ};
     }
 
     @Override
@@ -194,45 +230,51 @@ public class ModelViewer extends JPanel {
         }
     }
 
- 
     @Override
     public void repaint() {
         if (buffer == null) return;
         super.repaint();
         buffer = new BufferedImage(getWidth(), getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D g2d = buffer.createGraphics();
+        
         for (Face face : model.faces) {
-            if (face.vertexIndices.length == 3) {
-                Vertex v0 = model.vertices.get(face.vertexIndices[0]);
-                Vertex v1 = model.vertices.get(face.vertexIndices[1]);
-                Vertex v2 = model.vertices.get(face.vertexIndices[2]);
-                Point p0 = project(v0);
-                Point p1 = project(v1);
-                Point p2 = project(v2);
+           // Si la cara tiene exactamente 3 vértices (es un triángulo)
+           if (face.vertexIndices.length == 3) {
+            // Obtenemos los vértices de la cara
+            Vertex v0 = model.vertices.get(face.vertexIndices[0]);
+            Vertex v1 = model.vertices.get(face.vertexIndices[1]);
+            Vertex v2 = model.vertices.get(face.vertexIndices[2]);
 
-                if (!showWireframe && face.textureIndices[0] >= 0 && face.textureIndices[1] >= 0 && face.textureIndices[2] >= 0) {
-                    TextureVertex t0 = model.textureVertices.get(face.textureIndices[0]);
-                    TextureVertex t1 = model.textureVertices.get(face.textureIndices[1]);
-                    TextureVertex t2 = model.textureVertices.get(face.textureIndices[2]);
-                    drawTexturedTriangle(p0.x, p0.y, t0.u, t0.v,
-                                         p1.x, p1.y, t1.u, t1.v,
-                                         p2.x, p2.y, t2.u, t2.v);
-                } else {
-                    drawNonVerticalLineBresenham(p0.x, p0.y, p1.x, p1.y, Color.BLACK);
-                    drawNonVerticalLineBresenham(p1.x, p1.y, p2.x, p2.y, Color.BLACK);
-                    drawNonVerticalLineBresenham(p2.x, p2.y, p0.x, p0.y, Color.BLACK);
-                }
+            // Proyectamos los vértices en 2D
+            Point p0 = project(v0);
+            Point p1 = project(v1);
+            Point p2 = project(v2);
 
-                // Dibujar la malla
-                if (showWireframe) {
-                    drawNonVerticalLineBresenham(p0.x, p0.y, p1.x, p1.y, Color.RED);
-                    drawNonVerticalLineBresenham(p1.x, p1.y, p2.x, p2.y, Color.RED);
-                    drawNonVerticalLineBresenham(p2.x, p2.y, p0.x, p0.y, Color.RED);
-                }
+            // Si no estamos mostrando la malla y la cara tiene índices de textura válidos
+            if (!showWireframe && face.textureIndices[0] >= 0 && face.textureIndices[1] >= 0 && face.textureIndices[2] >= 0) {
+                // Obtenemos las coordenadas de textura de los vértices
+                TextureVertex t0 = model.textureVertices.get(face.textureIndices[0]);
+                TextureVertex t1 = model.textureVertices.get(face.textureIndices[1]);
+                TextureVertex t2 = model.textureVertices.get(face.textureIndices[2]);
+
+                // Dibujamos el triángulo texturizado
+                drawTexturedTriangle(p0.x, p0.y, t0.u, t0.v,
+                                     p1.x, p1.y, t1.u, t1.v,
+                                     p2.x, p2.y, t2.u, t2.v);
+            }
+
+            // Si estamos mostrando la malla, dibujamos las líneas en rojo
+            if (showWireframe) {
+                drawNonVerticalLineBresenham(p0.x, p0.y, p1.x, p1.y, Color.RED);
+                drawNonVerticalLineBresenham(p1.x, p1.y, p2.x, p2.y, Color.RED);
+                drawNonVerticalLineBresenham(p2.x, p2.y, p0.x, p0.y, Color.RED);
             }
         }
-        g2d.dispose();
     }
+
+    // Liberamos los recursos del objeto Graphics2D
+    g2d.dispose();
+}
 
     public void drawNonVerticalLineBresenham(int x0, int y0, int x1, int y1, Color color) {
         int dx = Math.abs(x1 - x0);
@@ -270,45 +312,64 @@ public class ModelViewer extends JPanel {
     private void drawTexturedTriangle(int x0, int y0, double u0, double v0,
                                       int x1, int y1, double u1, double v1,
                                       int x2, int y2, double u2, double v2) {
+        // Ordenar los vértices por coordenada y (y0 <= y1 <= y2)
         if (y0 > y1) {
+            // Intercambiar (x0, y0, u0, v0) y (x1, y1, u1, v1)
             int tempX = x0, tempY = y0; double tempU = u0, tempV = v0;
             x0 = x1; y0 = y1; u0 = u1; v0 = v1;
             x1 = tempX; y1 = tempY; u1 = tempU; v1 = tempV;
         }
         if (y0 > y2) {
+            // Intercambiar (x0, y0, u0, v0) y (x2, y2, u2, v2)
             int tempX = x0, tempY = y0; double tempU = u0, tempV = v0;
             x0 = x2; y0 = y2; u0 = u2; v0 = v2;
             x2 = tempX; y2 = tempY; u2 = tempU; v2 = tempV;
         }
         if (y1 > y2) {
+            // Intercambiar (x1, y1, u1, v1) y (x2, y2, u2, v2)
             int tempX = x1, tempY = y1; double tempU = u1; double tempV = v1;
             x1 = x2; y1 = y2; u1 = u2; v1 = v2;
             x2 = tempX; y2 = tempY; u2 = tempU; v2 = tempV;
         }
 
         int totalHeight = y2 - y0;
+        // Recorrer cada línea horizontal de y0 a y2
         for (int y = y0; y <= y2; y++) {
+            // Determinar si estamos en la segunda mitad del triángulo
             boolean secondHalf = y > y1 || y1 == y0;
             int segmentHeight = secondHalf ? y2 - y1 : y1 - y0;
             double alpha = (double)(y - y0) / totalHeight;
             double beta = (double)(y - (secondHalf ? y1 : y0)) / segmentHeight;
+            
+            // Calcular los límites izquierdo (A) y derecho (B) de la línea
             int A = x0 + (int)((x2 - x0) * alpha);
             int B = secondHalf ? x1 + (int)((x2 - x1) * beta) : x0 + (int)((x1 - x0) * beta);
+            
+            // Calcular las coordenadas de textura correspondientes para los límites
             double texA_u = u0 + (u2 - u0) * alpha;
             double texA_v = v0 + (v2 - v0) * alpha;
             double texB_u = secondHalf ? u1 + (u2 - u1) * beta : u0 + (u1 - u0) * beta;
             double texB_v = secondHalf ? v1 + (v2 - v1) * beta : v0 + (v1 - v0) * beta;
+            
+            // Asegurarse de que A esté a la izquierda de B
             if (A > B) {
                 int tempX = A; A = B; B = tempX;
                 double tempU = texA_u; texA_u = texB_u; texB_u = tempU;
                 double tempV = texA_v; texA_v = texB_v; texB_v = tempV;
             }
+            
+            // Recorrer cada píxel de la línea horizontal
             for (int x = A; x <= B; x++) {
+                // Interpolar las coordenadas de textura
                 double phi = B == A ? 1.0 : (double)(x - A) / (double)(B - A);
                 double texU = texA_u + (texB_u - texA_u) * phi;
                 double texV = texA_v + (texB_v - texA_v) * phi;
+                
+                // Asegurarse de que las coordenadas de textura estén dentro del rango [0, 1]
                 texU = Math.max(0.0, Math.min(1.0, texU));
                 texV = Math.max(0.0, Math.min(1.0, texV));
+                
+                // Pintar el píxel con el color de la textura correspondiente
                 putPixel(x, y, model.texture.getRGB(texU, texV));
             }
         }
@@ -319,8 +380,6 @@ public class ModelViewer extends JPanel {
             Model model = new Model();
             try {
                 model.loadFromOBJ("Yoshi/Yoshi.obj");
-                //model.loadFromOBJ("Clefairy_Teacher\\Clefairy Teacher\\clefteacher.obj");
-
                 model.loadTexture("Pikachu/yellow.png");
             } catch (IOException e) {
                 e.printStackTrace();
